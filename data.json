@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "date": "2026-05-26",
+    "category": "Трюки",
+    "note": "TEST тест",
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://kep0956kononenko-ctrl.github.io/captain-archive-auto/media/1779777940479_1000000152.jpg"
+      },
+      {
+        "type": "video",
+        "url": "https://www.youtube.com/watch?v=-452p_9ESbM"
+      }
+    ]
+  }
+]
