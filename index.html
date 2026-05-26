@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Капитанский Архив v8.1</title>
+    <title>Капитанский Архив v8.2</title>
     <style>
         body { background: #1a1a1a; color: #eee; font-family: Arial; padding: 20px; text-align: center; }
         input, button, select, textarea { margin: 8px; padding: 10px; font-size: 16px; background: #333; color: #eee; border: 1px solid #555; border-radius: 5px; }
@@ -57,7 +57,7 @@
 
         let githubToken = localStorage.getItem('github_token');
 
-        // Вспомогательная функция для кодирования строки в base64 с поддержкой UTF-8
+        // Кодирование строки в base64 с поддержкой UTF-8 (русских букв)
         function toBase64(str) {
             const bytes = new TextEncoder().encode(str);
             let binary = '';
@@ -151,12 +151,15 @@
                         reader.onload = (e) => resolve(e.target.result.split(',')[1]);
                         reader.readAsDataURL(photoFile);
                     });
-                    const photoName = Date.now() + '_' + photoFile.name;
-                    // Для фото передаём уже готовую base64-строку, без дополнительного кодирования
-                    await githubPut(`${MEDIA_FOLDER}${photoName}`, photoData, `Upload photo ${photoName}`, false);
+                    // Очищаем имя файла от всего, кроме латиницы, цифр и точки
+                    const safeName = photoFile.name.replace(/[^a-zA-Z0-9.]/g, '_');
+                    const photoName = Date.now() + '_' + safeName;
+                    // Для фото передаём готовую base64-строку (без дополнительного кодирования)
+                    await githubPut(`${MEDIA_FOLDER}${photoName}`, photoData, `Upload photo ${photoName}`);
                     photoUrl = `https://${REPO_OWNER}.github.io/${REPO_NAME}/${MEDIA_FOLDER}${photoName}`;
                 }
 
+                // Получаем текущий data.json
                 const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${DATA_PATH}`, {
                     headers: { 'Authorization': `token ${githubToken}` }
                 });
@@ -167,10 +170,10 @@
                 if (videoUrl) newEntry.media.push({ type: 'video', url: videoUrl });
                 entries.push(newEntry);
 
-                // Кодируем JSON с поддержкой кириллицы
+                // Кодируем JSON с кириллицей через toBase64
                 const jsonContent = JSON.stringify(entries, null, 2);
                 const base64Content = toBase64(jsonContent);
-                await githubPut(DATA_PATH, base64Content, 'Update diary', true, data.sha);
+                await githubPut(DATA_PATH, base64Content, 'Update diary', data.sha);
                 status.textContent = 'Опубликовано! Обнови страницу.';
                 document.getElementById('photoFile').value = '';
                 document.getElementById('videoUrl').value = '';
@@ -180,13 +183,11 @@
             }
         }
 
-        // Универсальная функция загрузки файла в репозиторий
-        // content - уже base64-строка, encode - нужно ли ещё кодировать (для старых вызовов, но мы всегда передаём готовую)
-        async function githubPut(path, content, message, encode = true, sha = null) {
-            // Если encode == true, то content ещё не в base64, но мы больше не используем эту ветку
+        // Универсальная загрузка файла в репозиторий
+        async function githubPut(path, content, message, sha = null) {
             const body = {
                 message: message,
-                content: content  // всегда передаём уже base64
+                content: content  // content уже в base64
             };
             if (sha) body.sha = sha;
             const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}`, {
