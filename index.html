@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Капитанский Архив v8.2</title>
+    <title>Капитанский Архив v8.4</title>
     <style>
         body { background: #1a1a1a; color: #eee; font-family: Arial; padding: 20px; text-align: center; }
         input, button, select, textarea { margin: 8px; padding: 10px; font-size: 16px; background: #333; color: #eee; border: 1px solid #555; border-radius: 5px; }
@@ -57,7 +57,7 @@
 
         let githubToken = localStorage.getItem('github_token');
 
-        // Кодирование строки в base64 с поддержкой UTF-8 (русских букв)
+        // Безопасное кодирование UTF-8 -> base64
         function toBase64(str) {
             const bytes = new TextEncoder().encode(str);
             let binary = '';
@@ -65,6 +65,16 @@
                 binary += String.fromCharCode(bytes[i]);
             }
             return btoa(binary);
+        }
+
+        // Декодирование base64 -> UTF-8
+        function fromBase64(base64) {
+            const binary = atob(base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return new TextDecoder().decode(bytes);
         }
 
         window.onload = function() {
@@ -104,16 +114,18 @@
                 });
                 if (!response.ok) throw new Error('Не могу загрузить data.json');
                 const data = await response.json();
-                const content = JSON.parse(atob(data.content));
+                // Декодируем контент правильно (UTF-8)
+                const content = fromBase64(data.content);
+                const entries = JSON.parse(content);
                 container.innerHTML = '';
-                content.reverse().forEach(entry => {
+                entries.reverse().forEach(entry => {
                     const div = document.createElement('div');
                     div.className = 'entry';
                     let mediaHTML = '';
                     if (entry.media) {
                         entry.media.forEach(m => {
                             if (m.type === 'photo') {
-                                mediaHTML += `<img src="${m.url}" alt="photo">`;
+                                mediaHTML += `<img src="${m.url}" alt="photo" onerror="this.style.display='none'">`;
                             } else if (m.type === 'video') {
                                 let embedUrl = m.url;
                                 if (m.url.includes('youtube.com/watch?v=')) {
@@ -130,6 +142,7 @@
                 });
             } catch (err) {
                 container.innerHTML = '<p>Ошибка загрузки. Проверь токен и файлы.</p>';
+                console.error(err);
             }
         }
 
@@ -151,12 +164,13 @@
                         reader.onload = (e) => resolve(e.target.result.split(',')[1]);
                         reader.readAsDataURL(photoFile);
                     });
-                    // Очищаем имя файла от всего, кроме латиницы, цифр и точки
+                    // Очищаем имя файла до безопасного
                     const safeName = photoFile.name.replace(/[^a-zA-Z0-9.]/g, '_');
                     const photoName = Date.now() + '_' + safeName;
-                    // Для фото передаём готовую base64-строку (без дополнительного кодирования)
+                    // Загружаем фото в папку media
                     await githubPut(`${MEDIA_FOLDER}${photoName}`, photoData, `Upload photo ${photoName}`);
                     photoUrl = `https://${REPO_OWNER}.github.io/${REPO_NAME}/${MEDIA_FOLDER}${photoName}`;
+                    console.log('Фото загружено, URL:', photoUrl);
                 }
 
                 // Получаем текущий data.json
@@ -164,13 +178,13 @@
                     headers: { 'Authorization': `token ${githubToken}` }
                 });
                 const data = await response.json();
-                const entries = JSON.parse(atob(data.content));
+                const entries = JSON.parse(fromBase64(data.content));
                 const newEntry = { date, category, note, media: [] };
                 if (photoUrl) newEntry.media.push({ type: 'photo', url: photoUrl });
                 if (videoUrl) newEntry.media.push({ type: 'video', url: videoUrl });
                 entries.push(newEntry);
 
-                // Кодируем JSON с кириллицей через toBase64
+                // Кодируем обратно в UTF-8 base64
                 const jsonContent = JSON.stringify(entries, null, 2);
                 const base64Content = toBase64(jsonContent);
                 await githubPut(DATA_PATH, base64Content, 'Update diary', data.sha);
@@ -180,15 +194,12 @@
                 document.getElementById('noteInput').value = '';
             } catch (err) {
                 status.textContent = 'Ошибка: ' + err.message;
+                console.error(err);
             }
         }
 
-        // Универсальная загрузка файла в репозиторий
         async function githubPut(path, content, message, sha = null) {
-            const body = {
-                message: message,
-                content: content  // content уже в base64
-            };
+            const body = { message, content };
             if (sha) body.sha = sha;
             const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}`, {
                 method: 'PUT',
